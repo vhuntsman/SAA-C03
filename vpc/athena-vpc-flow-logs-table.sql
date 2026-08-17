@@ -32,5 +32,5 @@ CREATE EXTERNAL TABLE IF NOT EXISTS `vpc_flow_logs` (
 PARTITIONED BY (`date` date)
 ROW FORMAT DELIMITED
 FIELDS TERMINATED BY ' '
-LOCATION 's3://vpcflowlogsdemo-vpcflowlogbucket-kravq3ewnibh/AWSLogs/414691912724/vpcflowlogs/us-east-1/'
+LOCATION 's3://vpcflowlogsdemo-vpcflowlogbucket-<replace_this>/AWSLogs/<replace_this>/vpcflowlogs/us-east-1/'
 TBLPROPERTIES ("skip.header.line.count"="1");
