@@ -1,0 +1,103 @@
+# aws cloudformation deploy --template-file vpc_gateway_endpoint.yaml --stack-name VpcGatewayEndpointDemo --capabilities CAPABILITY_IAM --parameter-overrides InstanceType=t2.micro PrivateRouteTableId=$(aws ec2 describe-route-tables  --filters "Name=tag:aws:cloudformation:logical-id,Values=PrivateRouteTableTwo" "Name=tag:aws:cloudformation:stack-name,Values=private-ecs"  --query "RouteTables[*].RouteTableId"  --output text)
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Demo VPC gateway endpoint'
+Parameters:
+  PrivateRouteTableId:
+    Type: String
+  InstanceType:
+    Description: WebServer EC2 instance type
+    Type: String
+    Default: t3.small
+    ConstraintDescription: must be a valid EC2 instance type.
+  LatestAmiId:
+    Type:  'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
+Resources:
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [ec2.amazonaws.com]
+          Action: ['sts:AssumeRole']
+      Path: /
+      ManagedPolicyArns: 
+        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+        - 'arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess'
+
+  launchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${AWS::StackName}-launchTemplate"
+      LaunchTemplateData:
+        ImageId: !Ref 'LatestAmiId'
+        MetadataOptions:
+          HttpTokens: required
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [!Ref 'EC2Role']
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref launchTemplate
+        Version: !GetAtt launchTemplate.LatestVersionNumber
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      InstanceType: !Ref 'InstanceType'
+      SecurityGroupIds:
+        - !GetAtt InstanceSecurityGroup.GroupId      
+      KeyName:
+        Fn::ImportValue: 'private-ecs-SshKeyName'
+      SubnetId: {"Fn::ImportValue": "private-ecs:PrivateSubnetTwo"}
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          # Use this for your user data (script from top to bottom)
+          # install httpd (Linux 2 version)
+          yum update -y
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          az=$(TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"` && curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone)
+          echo "<h1>Hello vpc endpoint from $(hostname -f) and $az</h1>" > /var/www/html/index.html
+  
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: {"Fn::ImportValue": !Sub "private-ecs:VPCId"}
+      GroupDescription: Enable SSH access via port 22
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+
+  VpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: 's3:*'
+            Principal: '*'
+            Resource: '*'
+      RouteTableIds:
+        - !Ref PrivateRouteTableId
+      ServiceName: !Join
+        - ""
+        - - com.amazonaws.
+          - !Ref AWS::Region
+          - .s3
+      VpcId:
+        Fn::ImportValue: "private-ecs:VPCId"

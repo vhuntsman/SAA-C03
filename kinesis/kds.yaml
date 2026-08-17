@@ -1,0 +1,16 @@
+# aws cloudformation deploy --template-file kds.yaml --capabilities CAPABILITY_IAM --stack-name kds --tags AppManagerCFNStackKey=kds
+
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  DemoStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: DemoStream
+      ShardCount: 1
+
+Outputs:
+  SourceStream:
+    Description: Arn of the source stream
+    Value: !GetAtt DemoStream.Arn
+    Export: 
+      Name: !Sub ${AWS::StackName}-Kinesis-Data-Stream

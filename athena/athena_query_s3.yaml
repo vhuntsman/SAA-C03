@@ -1,0 +1,49 @@
+# aws cloudformation deploy --template-file athena_query_s3.yaml --capabilities CAPABILITY_IAM --stack-name athena --tags AppManagerCFNStackKey=athena
+# aws cloudformation delete-stack --stack-name athena
+
+Resources:
+  DemoBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketNamePrefix: athena
+      BucketNamespace: account-regional
+
+  # 1. The Target Bucket where access logs will be sent
+  LoggingBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: "AES256"
+
+  # 2. Bucket Policy allowing S3 Log Delivery to write into the Target Bucket
+  LoggingBucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref LoggingBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "S3ServerAccessLoggingWrite"
+            Effect: "Allow"
+            Principal:
+              Service: "logging.s3.amazonaws.com"
+            Action: "s3:PutObject"
+            Resource: !Sub "arn:aws:s3:::${LoggingBucket}/logs/*"
+            Condition:
+              StringEquals:
+                "aws:SourceAccount": !Ref "AWS::AccountId"
+
+  # 3. The Source Bucket with Server Access Logging enabled
+  SourceBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: "AES256"
+      # Enable server access logging linkage
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LoggingBucket
+        LogFilePrefix: "logs/"

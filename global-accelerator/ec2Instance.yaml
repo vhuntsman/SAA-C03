@@ -1,0 +1,45 @@
+# aws cloudformation deploy --template-file ec2Instance.yaml --capabilities CAPABILITY_IAM --stack-name global-accelerator --tags AppManagerCFNStackKey=global-accelerator
+# aws cloudformation delete-stack --stack-name global-accelerator
+Resources:
+  MyKeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: DemoKeyPair
+      KeyType: ed25519
+
+  MyInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      AvailabilityZone: !Sub ${AWS::Region}a
+      ImageId: ami-009d6802948d06e52
+      InstanceType: t2.micro
+      KeyName: !Ref MyKeyPair
+      SecurityGroups:
+        - !Ref SSHSecurityGroup
+      # we install our web server with user data
+      UserData: 
+        Fn::Base64: |
+          #!/bin/bash
+          # Use this for your user data (script from top to bottom)
+          # install httpd (Linux 2 version)
+          yum update -y
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          az=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
+          echo "<h1>Hello World from $(hostname -f) in $az</h1>" > /var/www/html/index.html
+
+  # our EC2 security group
+  SSHSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: SSH and HTTP
+      SecurityGroupIngress:
+      - CidrIp: 0.0.0.0/0
+        FromPort: 22
+        IpProtocol: tcp
+        ToPort: 22
+      - CidrIp: 0.0.0.0/0
+        FromPort: 80
+        IpProtocol: tcp
+        ToPort: 80

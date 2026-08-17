@@ -1,0 +1,65 @@
+# after deploying kds.yaml
+# aws cloudformation deploy --template-file adf.yaml --capabilities CAPABILITY_IAM --stack-name adf --tags AppManagerCFNStackKey=adf
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Minimal Firehose delivery stream from Kinesis Data Stream to S3.
+
+Resources:
+  # 2. Destination S3 Bucket
+  MyDestinationBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: demo-firehose-udemy-s3
+
+  # 3. IAM Role for Firehose
+  FirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: FirehoseAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Read permissions from Kinesis
+              - Effect: Allow
+                Action:
+                  - kinesis:DescribeStream
+                  - kinesis:GetShardIterator
+                  - kinesis:GetRecords
+                  - kinesis:ListShards
+                Resource: 
+                  Fn::ImportValue: 'kds-Kinesis-Data-Stream'
+              # Write permissions to S3
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:PutObject
+                Resource:
+                  - !GetAtt MyDestinationBucket.Arn
+                  - !Sub '${MyDestinationBucket.Arn}/*'
+
+  # 4. Firehose Delivery Stream
+  MyFirehoseDeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN: 
+          Fn::ImportValue: 'kds-Kinesis-Data-Stream'
+        RoleARN: !GetAtt FirehoseRole.Arn
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !GetAtt MyDestinationBucket.Arn
+        RoleARN: !GetAtt FirehoseRole.Arn
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 1

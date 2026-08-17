@@ -1,0 +1,7 @@
+# aws cloudformation deploy --template-file sns.yaml --capabilities CAPABILITY_IAM --stack-name sns --tags AppManagerCFNStackKey=sns
+
+Resources:
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: MyFirstTopic

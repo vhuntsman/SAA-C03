@@ -1,0 +1,45 @@
+# aws cloudformation deploy --template-file sqs.yaml --capabilities CAPABILITY_IAM --stack-name sqs --tags AppManagerCFNStackKey=sqs
+# aws cloudformation delete-stack --stack-name sqs
+Resources:
+  StandardQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: DemoQueue
+
+  DemoQueuePolicy: 
+    Type: AWS::SQS::QueuePolicy
+    Properties: 
+      Queues: 
+        - !Ref StandardQueue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Action: 
+              - "SQS:*"
+            Effect: "Allow"
+            Resource: !GetAtt StandardQueue.Arn
+            Principal:  
+              AWS: 
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+
+  FifoDemoQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+          FifoQueue: true
+          QueueName: DemoQueue.fifo
+
+  DemoQueueFifoPolicy: 
+    Type: AWS::SQS::QueuePolicy
+    Properties: 
+      Queues: 
+        - !Ref FifoDemoQueue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Action: 
+              - "SQS:*"
+            Effect: "Allow"
+            Resource: !GetAtt FifoDemoQueue.Arn
+            Principal:  
+              AWS: 
+                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"

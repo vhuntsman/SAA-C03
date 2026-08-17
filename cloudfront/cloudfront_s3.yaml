@@ -1,0 +1,67 @@
+# aws cloudformation deploy --template-file cloudfront_s3.yaml --capabilities CAPABILITY_IAM --stack-name udemy-cloudfront-with-s3 --tags AppManagerCFNStackKey=udemy-cloudfront-with-s3
+# aws cloudformation delete-stack --stack-name udemy-cloudfront-with-s3
+
+Resources:
+  DemoBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketNamePrefix: demo-cloudfront
+      BucketNamespace: account-regional
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DemoBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipalReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${DemoBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudfrontDistribution}      
+
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: s3-oac
+        Description: OAC for private S3 origin
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  CloudfrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig: 
+        Enabled: true
+        Comment: CloudFront distribution for private S3 bucket
+
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt DemoBucket.RegionalDomainName
+            S3OriginConfig: {}
+            OriginAccessControlId: !GetAtt CloudFrontOAC.Id
+
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+
+          AllowedMethods:
+            - GET
+            - HEAD
+
+          CachedMethods:
+            - GET
+            - HEAD
+
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+
+
+  

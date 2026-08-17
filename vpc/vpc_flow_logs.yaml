@@ -1,0 +1,92 @@
+# aws cloudformation deploy --template-file vpc_flow_logs.yaml --stack-name VpcFlowLogsDemo --capabilities CAPABILITY_IAM
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template to enable VPC Flow Logs to BOTH CloudWatch and S3'
+
+Resources:
+  # ==========================================
+  # SHARED RESOURCES FOR CLOUDWATCH DESTINATION
+  # ==========================================
+  VPCFlowLogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Sub
+        - '/aws/vpc/flowlogs/${VpcId}'
+        - VpcId: !ImportValue 'private-ecs:VPCId'
+      RetentionInDays: 30
+
+  VPCFlowLogRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 'vpc-flow-logs.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns: ['arn:aws:iam::aws:policy/CloudWatchLogsFullAccess']
+
+  # Destination 1: CloudWatch Flow Log
+  VPCFlowLogToCloudWatch:
+    Type: 'AWS::EC2::FlowLog'
+    Properties:
+      DeliverLogsPermissionArn: !GetAtt VPCFlowLogRole.Arn
+      LogGroupName: !Ref VPCFlowLogGroup
+      ResourceId: {"Fn::ImportValue": "private-ecs:VPCId"}
+      ResourceType: VPC
+      TrafficType: ALL
+      MaxAggregationInterval: 60
+
+  # ==========================================
+  # SHARED RESOURCES FOR S3 DESTINATION
+  # ==========================================
+  VPCFlowLogBucket:
+    Type: 'AWS::S3::Bucket'
+
+# 2. REQUIRED: The Resource-Based S3 Bucket Policy
+  VPCFlowLogBucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref VPCFlowLogBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Allow the log delivery service to check bucket ACL status
+          - Sid: AWSLogDeliveryAclCheck
+            Effect: Allow
+            Principal:
+              Service: delivery.logs.amazonaws.com
+            Action: 's3:GetBucketAcl'
+            Resource: !GetAtt VPCFlowLogBucket.Arn
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref 'AWS::AccountId'
+
+          # Allow the log delivery service to write logs to the bucket
+          - Sid: AWSLogDeliveryWrite
+            Effect: Allow
+            Principal:
+              Service: delivery.logs.amazonaws.com
+            Action: 's3:PutObject'
+            Resource: !Sub '${VPCFlowLogBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+                aws:SourceAccount: !Ref 'AWS::AccountId'    
+
+  # Destination 2: S3 Flow Log
+  VPCFlowLogToS3:
+    Type: 'AWS::EC2::FlowLog'
+    Properties:
+      LogDestination: !GetAtt VPCFlowLogBucket.Arn
+      LogDestinationType: s3
+      ResourceId: {"Fn::ImportValue": "private-ecs:VPCId"}
+      ResourceType: VPC
+      TrafficType: ALL
+      MaxAggregationInterval: 60
+
+  DemoBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketNamePrefix: athena
+      BucketNamespace: account-regional
