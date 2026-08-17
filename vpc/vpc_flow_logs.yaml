@@ -11,7 +11,7 @@ Resources:
     Properties:
       LogGroupName: !Sub
         - '/aws/vpc/flowlogs/${VpcId}'
-        - VpcId: !ImportValue 'private-ecs:VPCId'
+        - VpcId: !ImportValue 'vpc:VPCId'
       RetentionInDays: 30
 
   VPCFlowLogRole:
@@ -32,7 +32,7 @@ Resources:
     Properties:
       DeliverLogsPermissionArn: !GetAtt VPCFlowLogRole.Arn
       LogGroupName: !Ref VPCFlowLogGroup
-      ResourceId: {"Fn::ImportValue": "private-ecs:VPCId"}
+      ResourceId: {"Fn::ImportValue": "vpc:VPCId"}
       ResourceType: VPC
       TrafficType: ALL
       MaxAggregationInterval: 60
@@ -72,7 +72,7 @@ Resources:
             Condition:
               StringEquals:
                 s3:x-amz-acl: bucket-owner-full-control
-                aws:SourceAccount: !Ref 'AWS::AccountId'    
+                aws:SourceAccount: !Ref 'AWS::AccountId'
 
   # Destination 2: S3 Flow Log
   VPCFlowLogToS3:
@@ -80,13 +80,13 @@ Resources:
     Properties:
       LogDestination: !GetAtt VPCFlowLogBucket.Arn
       LogDestinationType: s3
-      ResourceId: {"Fn::ImportValue": "private-ecs:VPCId"}
+      ResourceId: {"Fn::ImportValue": "vpc:VPCId"}
       ResourceType: VPC
       TrafficType: ALL
       MaxAggregationInterval: 60
 
   DemoBucket:
     Type: AWS::S3::Bucket
-    Properties: 
+    Properties:
       BucketNamePrefix: athena
       BucketNamespace: account-regional

@@ -1,17 +1,19 @@
-# aws cloudformation deploy --template-file vpc_gateway_endpoint.yaml --stack-name VpcGatewayEndpointDemo --capabilities CAPABILITY_IAM --parameter-overrides InstanceType=t2.micro PrivateRouteTableId=$(aws ec2 describe-route-tables  --filters "Name=tag:aws:cloudformation:logical-id,Values=PrivateRouteTableTwo" "Name=tag:aws:cloudformation:stack-name,Values=private-ecs"  --query "RouteTables[*].RouteTableId"  --output text)
+# aws cloudformation deploy --template-file vpc_gateway_endpoint.yaml --stack-name VpcGatewayEndpointDemo --capabilities CAPABILITY_IAM --parameter-overrides InstanceType=t2.micro
 AWSTemplateFormatVersion: '2010-09-09'
+
 Description: 'Demo VPC gateway endpoint'
+
 Parameters:
-  PrivateRouteTableId:
-    Type: String
   InstanceType:
     Description: WebServer EC2 instance type
     Type: String
     Default: t3.small
     ConstraintDescription: must be a valid EC2 instance type.
+
   LatestAmiId:
     Type:  'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
     Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
+
 Resources:
   EC2Role:
     Type: AWS::IAM::Role
@@ -23,7 +25,7 @@ Resources:
             Service: [ec2.amazonaws.com]
           Action: ['sts:AssumeRole']
       Path: /
-      ManagedPolicyArns: 
+      ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
         - 'arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess'
 
@@ -51,10 +53,10 @@ Resources:
       IamInstanceProfile: !Ref EC2InstanceProfile
       InstanceType: !Ref 'InstanceType'
       SecurityGroupIds:
-        - !GetAtt InstanceSecurityGroup.GroupId      
+        - !GetAtt InstanceSecurityGroup.GroupId
       KeyName:
-        Fn::ImportValue: 'private-ecs-SshKeyName'
-      SubnetId: {"Fn::ImportValue": "private-ecs:PrivateSubnetTwo"}
+        Fn::ImportValue: 'private-ecs:SshKeyName'
+      SubnetId: {"Fn::ImportValue": "vpc:PrivateSubnetTwo"}
       UserData:
         Fn::Base64: |
           #!/bin/bash
@@ -66,11 +68,14 @@ Resources:
           systemctl enable httpd
           az=$(TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"` && curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone)
           echo "<h1>Hello vpc endpoint from $(hostname -f) and $az</h1>" > /var/www/html/index.html
-  
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-ec2
+
   InstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      VpcId: {"Fn::ImportValue": !Sub "private-ecs:VPCId"}
+      VpcId: {"Fn::ImportValue": !Sub "vpc:VPCId"}
       GroupDescription: Enable SSH access via port 22
       SecurityGroupIngress:
       - IpProtocol: tcp
@@ -93,11 +98,12 @@ Resources:
             Principal: '*'
             Resource: '*'
       RouteTableIds:
-        - !Ref PrivateRouteTableId
+        - Fn::ImportValue: "vpc:PrivateRouteTableOne"
+        - Fn::ImportValue: "vpc:PrivateRouteTableTwo"
       ServiceName: !Join
         - ""
         - - com.amazonaws.
           - !Ref AWS::Region
           - .s3
       VpcId:
-        Fn::ImportValue: "private-ecs:VPCId"
+        Fn::ImportValue: "vpc:VPCId"
