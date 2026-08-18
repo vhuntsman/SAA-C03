@@ -1,6 +1,12 @@
 # aws cloudformation deploy --template-file vpc_flow_logs.yaml --stack-name VpcFlowLogsDemo --capabilities CAPABILITY_IAM
 AWSTemplateFormatVersion: '2010-09-09'
+
 Description: 'CloudFormation template to enable VPC Flow Logs to BOTH CloudWatch and S3'
+
+Parameters:
+  VpcStackName:
+    Type: String
+    Default: vpc
 
 Resources:
   # ==========================================
@@ -11,7 +17,7 @@ Resources:
     Properties:
       LogGroupName: !Sub
         - '/aws/vpc/flowlogs/${VpcId}'
-        - VpcId: !ImportValue 'vpc:VPCId'
+        - VpcId: {"Fn::ImportValue": !Sub "${VpcStackName}:VPCId"}
       RetentionInDays: 30
 
   VPCFlowLogRole:
@@ -32,7 +38,7 @@ Resources:
     Properties:
       DeliverLogsPermissionArn: !GetAtt VPCFlowLogRole.Arn
       LogGroupName: !Ref VPCFlowLogGroup
-      ResourceId: {"Fn::ImportValue": "vpc:VPCId"}
+      ResourceId: {"Fn::ImportValue": !Sub "${VpcStackName}:VPCId"}
       ResourceType: VPC
       TrafficType: ALL
       MaxAggregationInterval: 60
@@ -80,7 +86,7 @@ Resources:
     Properties:
       LogDestination: !GetAtt VPCFlowLogBucket.Arn
       LogDestinationType: s3
-      ResourceId: {"Fn::ImportValue": "vpc:VPCId"}
+      ResourceId:  {"Fn::ImportValue": !Sub "${VpcStackName}:VPCId"}
       ResourceType: VPC
       TrafficType: ALL
       MaxAggregationInterval: 60

@@ -14,6 +14,10 @@ Parameters:
     Type:  'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
     Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
 
+  VpcStackName:
+    Type: String
+    Default: vpc
+
 Resources:
   EC2Role:
     Type: AWS::IAM::Role
@@ -28,6 +32,7 @@ Resources:
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
         - 'arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess'
+        - 'arn:aws:iam::aws:policy/AmazonDynamoDBReadOnlyAccess'
 
   launchTemplate:
     Type: AWS::EC2::LaunchTemplate
@@ -55,8 +60,8 @@ Resources:
       SecurityGroupIds:
         - !GetAtt InstanceSecurityGroup.GroupId
       KeyName:
-        Fn::ImportValue: 'private-ecs:SshKeyName'
-      SubnetId: {"Fn::ImportValue": "vpc:PrivateSubnetTwo"}
+        Fn::ImportValue: !Sub '${VpcStackName}:SshKeyName'
+      SubnetId: {"Fn::ImportValue": !Sub "${VpcStackName}:PrivateSubnetTwo"}
       UserData:
         Fn::Base64: |
           #!/bin/bash
@@ -75,19 +80,15 @@ Resources:
   InstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      VpcId: {"Fn::ImportValue": !Sub "vpc:VPCId"}
+      VpcId: {"Fn::ImportValue": !Sub "${VpcStackName}:VPCId"}
       GroupDescription: Enable SSH access via port 22
       SecurityGroupIngress:
       - IpProtocol: tcp
         FromPort: 22
         ToPort: 22
         CidrIp: 0.0.0.0/0
-      - IpProtocol: tcp
-        FromPort: 80
-        ToPort: 80
-        CidrIp: 0.0.0.0/0
 
-  VpcEndpoint:
+  S3VpcEndpoint:
     Type: AWS::EC2::VPCEndpoint
     Properties:
       PolicyDocument:
@@ -98,12 +99,33 @@ Resources:
             Principal: '*'
             Resource: '*'
       RouteTableIds:
-        - Fn::ImportValue: "vpc:PrivateRouteTableOne"
-        - Fn::ImportValue: "vpc:PrivateRouteTableTwo"
+        - Fn::ImportValue: !Sub "${VpcStackName}:PrivateRouteTableOne"
+        - Fn::ImportValue: !Sub "${VpcStackName}:PrivateRouteTableTwo"
       ServiceName: !Join
         - ""
         - - com.amazonaws.
           - !Ref AWS::Region
           - .s3
       VpcId:
-        Fn::ImportValue: "vpc:VPCId"
+        Fn::ImportValue: !Sub "${VpcStackName}:VPCId"
+
+  DynamoDBVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: '*'
+            Principal: '*'
+            Resource: '*'
+      RouteTableIds:
+        - Fn::ImportValue: !Sub "${VpcStackName}:PrivateRouteTableOne"
+        - Fn::ImportValue: !Sub "${VpcStackName}:PrivateRouteTableTwo"
+      ServiceName: !Join
+        - ""
+        - - com.amazonaws.
+          - !Ref AWS::Region
+          - .dynamodb
+      VpcId:
+        Fn::ImportValue: !Sub "${VpcStackName}:VPCId"
