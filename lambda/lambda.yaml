@@ -1,0 +1,48 @@
+# aws cloudformation deploy --template-file lambda.yaml --stack-name lambda --capabilities CAPABILITY_IAM
+
+# invocation
+# aws lambda invoke --function-name 'hello-world-python-blueprint'   --cli-binary-format raw-in-base64-out --payload '{"key1":"value1","key2":"value2","key3":"value3"}' --invocation-type 'RequestResponse' --log-type 'Tail'  /dev/stdout
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation blueprint for a Python Hello World Lambda function.'
+
+Resources:
+  # Execution Role for the Lambda Function
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+
+  # The Lambda Function
+  HelloWorldLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 'hello-world-python-blueprint'
+      Handler: 'index.lambda_handler'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: 'python3.12'
+      Code:
+        ZipFile: |
+          import json
+
+          print('Loading function')
+
+          def lambda_handler(event, context):
+              #print("Received event: " + json.dumps(event, indent=2))
+              print("value1 = " + event['key1'])
+              print("value2 = " + event['key2'])
+              print("value3 = " + event['key3'])
+              return event['key1']  # Echo back the first key value
+              #raise Exception('Something went wrong')
+
+Outputs:
+  LambdaFunctionArn:
+    Description: 'ARN of the created Hello World Lambda function.'
+    Value: !GetAtt HelloWorldLambdaFunction.Arn

@@ -1,0 +1,156 @@
+# aws cloudformation deploy --template-file api-gateway.yaml --stack-name api-gateway --capabilities CAPABILITY_IAM
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  # Your CI/CD pipeline pushes a dynamic string here every run (e.g. CodePipeline, GitHub Actions)
+  DeploymentTriggerId:
+    Type: String
+    Default: 'initial-deploy'
+
+Resources:
+  # 1. IAM Role for Lambda Function Execution
+  # Execution Role for the Lambda Function
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+
+  # 2. Lambda Function to process requests
+  MyLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 'api-gateway-root-get'
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.12
+      Timeout: 10
+      Code:
+        ZipFile: |
+          import json
+
+          def lambda_handler(event, context):
+              body = "Hello from Lambda!"
+              statusCode = 200
+              return {
+                  "statusCode": statusCode,
+                  "body": json.dumps(body),
+                  "headers": {
+                      "Content-Type": "application/json"
+                  }
+              }
+  # 2. Lambda Function to process requests
+  MyLambdaFunction2:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 'api-gateway-houses-get'
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.12
+      Timeout: 10
+      Code:
+        ZipFile: |
+          import json
+
+          def lambda_handler(event, context):
+              body = "Hello from my pretty house!"
+              statusCode = 200
+              return {
+                  "statusCode": statusCode,
+                  "body": json.dumps(body),
+                  "headers": {
+                      "Content-Type": "application/json"
+                  }
+              }
+
+  # 3. Regional REST API Gateway
+  MyRegionalApi:
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+      Name: 'MyFirstAPI'
+      Description: 'Regional API Gateway with GET / and GET /houses'
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      SecurityPolicy: 'SecurityPolicy_TLS13_1_2_2021_06'
+      EndpointAccessMode: 'STRICT'
+
+  # 4. Define the "/houses" resource path
+  HousesResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      ParentId: !GetAtt MyRegionalApi.RootResourceId
+      PathPart: 'houses'
+      RestApiId: !Ref MyRegionalApi
+
+  # 5. Method 1: GET on the Root (/) resource
+  GetRootMethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId: !GetAtt MyRegionalApi.RootResourceId
+      RestApiId: !Ref MyRegionalApi
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MyLambdaFunction.Arn}/invocations'
+
+  # 6. Method 2: GET on the /houses resource
+  GetHousesMethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId: !Ref HousesResource
+      RestApiId: !Ref MyRegionalApi
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MyLambdaFunction2.Arn}/invocations'
+
+  # 7. API Gateway Deployment (Ensures state transitions are captured)
+  ApiDeployment:
+    Type: 'AWS::ApiGateway::Deployment'
+    DependsOn:
+      - GetRootMethod
+      - GetHousesMethod
+    Properties:
+      RestApiId: !Ref MyRegionalApi
+      StageName: 'prod'
+      StageDescription:
+        # Changing this dynamic ID forces CloudFormation to trigger a fresh live deploy!
+        Description: !Sub 'Build Trigger ID: ${DeploymentTriggerId}'
+
+  # 9. Grant API Gateway permission to invoke Lambda for GET /
+  GetRootLambdaPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !GetAtt MyLambdaFunction.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${MyRegionalApi}/prod/GET/'
+
+  # 10. Grant API Gateway permission to invoke Lambda for GET /houses
+  GetHousesLambdaPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !GetAtt MyLambdaFunction2.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${MyRegionalApi}/prod/GET/houses'
+
+Outputs:
+  RootInvokeURL:
+    Description: 'The invoke URL for the Root path.'
+    Value: !Sub 'https://${MyRegionalApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+  HousesInvokeURL:
+    Description: 'The invoke URL for the houses path.'
+    Value: !Sub 'https://${MyRegionalApi}.execute-api.${AWS::Region}.amazonaws.com/prod/houses'

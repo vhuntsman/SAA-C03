@@ -1,0 +1,22 @@
+#  aws cloudformation deploy --template-file dynamo.yaml --stack-name dynamo
+AWSTemplateFormatVersion: "2010-09-09"
+
+Resources:
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: DemoTable
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+
+Outputs:
+  TableName:
+    Description: Table name of the newly created DynamoDB table
+    Value: !Ref DynamoDBTable
