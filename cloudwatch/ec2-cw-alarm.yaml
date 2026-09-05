@@ -1,0 +1,78 @@
+# aws cloudformation deploy --template-file ec2-cw-alarm.yaml --stack-name ec2-cw-alarm  --capabilities CAPABILITY_IAM
+# stress the cpu to trigger the alarm
+# sudo yum install stress -y
+# stress -c 1
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  InstanceType:
+    Description: WebServer EC2 instance type
+    Type: String
+    Default: t2.micro
+
+  LatestAmiId:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+
+Resources:
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [ec2.amazonaws.com]
+          Action: ['sts:AssumeRole']
+      Path: /
+      ManagedPolicyArns:
+        ["arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"]
+
+  launchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${AWS::StackName}-launchTemplate"
+      LaunchTemplateData:
+        ImageId: !Ref 'LatestAmiId'
+        MetadataOptions:
+          HttpTokens: required
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [!Ref 'EC2Role']
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref launchTemplate
+        Version: !GetAtt launchTemplate.LatestVersionNumber
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      InstanceType: !Ref 'InstanceType'
+      SecurityGroups: [!Ref 'InstanceSecurityGroup']
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Empty Security Group
+
+  EC2CPUTerminationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: 'TerminateEC2OnHighCPU'
+      AlarmDescription: "Terminates the instance if CPU exceeds 95% for 15 minutes straight"
+      Namespace: "AWS/EC2"
+      MetricName: "CPUUtilization"
+      Statistic: "Average"
+      Period: 300                  # 5 minutes in seconds
+      EvaluationPeriods: 2         # 3 periods total
+      DatapointsToAlarm: 2         # Requires 3 out of 3 times to trigger
+      Threshold: 95.0              # 95% threshold
+      ComparisonOperator: "GreaterThanThreshold"
+      Dimensions:
+        - Name: "InstanceId"
+          Value: !Ref EC2Instance
+      AlarmActions:
+        - !Sub "arn:aws:automate:${AWS::Region}:ec2:terminate"
+

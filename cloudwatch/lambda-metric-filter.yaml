@@ -1,0 +1,68 @@
+# aws cloudformation deploy --template-file lambda-metric-filter.yaml --stack-name lambda-metric-filter --capabilities CAPABILITY_IAM
+
+# invocation
+# aws lambda invoke --function-name 'hello-world-cloudwatch' --cli-binary-format raw-in-base64-out --payload '{"key1":"value1","key2":"value2","key3":"value3"}' --invocation-type 'RequestResponse' --log-type 'Tail'  /dev/stdout
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation Lambda cloudwatch logs metric filter.'
+
+Resources:
+  # Execution Role for the Lambda Function
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+
+  # The Lambda Function
+  HelloWorldLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 'hello-world-cloudwatch'
+      Handler: 'index.lambda_handler'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: 'python3.12'
+      Code:
+        ZipFile: |
+          import json
+
+          print('Loading function')
+
+          def lambda_handler(event, context):
+              #print("Received event: " + json.dumps(event, indent=2))
+              print("value1 = " + event['key1'])
+              print("value2 = " + event['key2'])
+              print("value3 = " + event['key3'])
+              return event['key1']  # Echo back the first key value
+              #raise Exception('Something went wrong')
+
+  # 3. Explicit Log Group (Prevents naming conflicts and manages retention)
+  MyLambdaLogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      # Naming structure must exactly match the Lambda function name
+      LogGroupName: !Sub '/aws/lambda/${HelloWorldLambdaFunction}'
+      RetentionInDays: 14
+
+  # 4. The CloudWatch Log Metric Filter
+  LambdaErrorMetricFilter:
+    Type: 'AWS::Logs::MetricFilter'
+    Properties:
+      LogGroupName: !Ref MyLambdaLogGroup
+      FilterPattern: 'START RequestId'
+      FilterName: DemoFilterLambda
+      MetricTransformations:
+        - MetricName: 'CountStartLambda'
+          MetricNamespace: 'DemoNamespace'
+          MetricValue: '1'
+
+Outputs:
+  LambdaFunctionArn:
+    Description: 'ARN of the created Hello World Lambda function.'
+    Value: !GetAtt HelloWorldLambdaFunction.Arn

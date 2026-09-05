@@ -1,0 +1,95 @@
+# aws cloudformation deploy --template-file ec2-event-bridge-sns.yaml --stack-name ec2-event-bridge-sns  --capabilities CAPABILITY_IAM
+# stop instance to receive email if subscribed to sns topic
+Parameters:
+  InstanceType:
+    Description: WebServer EC2 instance type
+    Type: String
+    Default: t2.micro
+
+  LatestAmiId:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+
+Resources:
+  # 1. The Target SNS Topic
+  EC2NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: "ec2-state-change-notifications"
+
+  # 2. SNS Topic Policy to allow EventBridge to publish messages
+  EC2NotificationTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref EC2NotificationTopic
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 'events.amazonaws.com'
+            Action: "sns:Publish"
+            Resource: !Ref EC2NotificationTopic
+
+  # 3. The EventBridge Rule
+  EC2StateChangeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: "ec2-stopped-rule"
+      Description: "Triggered when an EC2 instance state is shutting-down or terminated."
+      State: "ENABLED"
+      EventPattern:
+        source:
+          - "aws.ec2"
+        detail-type:
+          - "EC2 Instance State-change Notification"
+        detail:
+          state:
+            - "stopped"
+      Targets:
+        - Arn: !Ref EC2NotificationTopic
+          Id: "SNSTopicTarget"
+
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [ec2.amazonaws.com]
+          Action: ['sts:AssumeRole']
+      Path: /
+      ManagedPolicyArns:
+        ["arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"]
+
+  launchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${AWS::StackName}-launchTemplate"
+      LaunchTemplateData:
+        ImageId: !Ref 'LatestAmiId'
+        MetadataOptions:
+          HttpTokens: required
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [!Ref 'EC2Role']
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref launchTemplate
+        Version: !GetAtt launchTemplate.LatestVersionNumber
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      InstanceType: !Ref 'InstanceType'
+      SecurityGroups: [!Ref 'InstanceSecurityGroup']
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Empty Security Group
