@@ -1,0 +1,18 @@
+# aws cloudformation deploy --template-file kms.yaml --stack-name kms
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'A basic CloudFormation template for a symmetric KMS key and alias.'
+
+Resources:
+  MySymmetricKey:
+    Type: 'AWS::KMS::Key'
+    Properties:
+      Description: 'Customer managed symmetric encryption key'
+      KeyUsage: 'ENCRYPT_DECRYPT'
+      KeySpec: 'SYMMETRIC_DEFAULT'
+      EnableKeyRotation: true
+
+  MyKeyAlias:
+    Type: 'AWS::KMS::Alias'
+    Properties:
+      AliasName: 'alias/tutorial'
+      TargetKeyId: !Ref MySymmetricKey
