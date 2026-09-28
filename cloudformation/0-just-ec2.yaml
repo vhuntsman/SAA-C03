@@ -1,3 +1,4 @@
+# aws cloudformation deploy --template-file 0-just-ec2.yaml --stack-name DemoCloudFormation
 ---
 Resources:
   MyInstance:
